@@ -33,10 +33,10 @@
     // Usage: scoreboard.html?server=https://fosdem.ems.host&room_name=%23exampledevroom:fosdem.org
     const params = (new URL(window.location)).searchParams;
 
-    const server = params.server || "https://fosdem.ems.host";
+    const server = params.get('server') || "https://fosdem.ems.host";
     const csapi = `${server}/_matrix/client/r0`;
     const mediaapi = `${server}/_matrix/media/r0`;
-    const room_alias = params.room_alias || "#exampledevroom:fosdem.org";
+    const room_alias = params.get('room_alias') || "#exampledevroom:fosdem.org";
     let room_id;
 
     let access_token = '';
@@ -83,6 +83,10 @@
         await fetch(`${csapi}/rooms/${room_id}/initialSync`, {
             headers: { "Authorization": `Bearer ${access_token}` }
         }).then(function(response) {
+            if (response.status >= 400) {
+                const scoreboard = document.getElementById("scoreboard");
+                scoreboard.innerHTML = `<b>Can't peek: ${ s(response.status) }</b>`;
+            }
             return response.json();
         }).then(function(data) {
             pagination_token = data.messages.start;
