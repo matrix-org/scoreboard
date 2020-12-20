@@ -53,7 +53,7 @@
         access_token = window.localStorage.access_token;
 
         const div = document.getElementById("roomName");
-        div.innerHTML = s(room_alias);
+        div.innerHTML = `<a href="https://matrix.to/#/${ s(room_alias) }">${ s(room_alias) }</a>`;
 
         if (!access_token) {
             // login as a guest
