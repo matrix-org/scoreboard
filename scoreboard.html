@@ -1,0 +1,192 @@
+<html>
+<head>
+    <title>Scoreboard</title>
+    <script type="text/javascript">
+
+    // Usage: scoreboard.html?server=https://fosdem.ems.host&room_id=!ycyvSmaACYwZpdDMqK:fosdem.org
+    const params = (new URL(window.location)).searchParams;
+
+    const server = params.server || "https://fosdem.ems.host";
+    const csapi = `${server}/_matrix/client/r0`;
+    const room_id = params.room_id || "!ycyvSmaACYwZpdDMqK:fosdem.org";
+
+    let access_token = '';
+    let pagination_token = '';
+    let sync_token = '';
+
+    let history = {};
+    let reactions = {};
+
+    start();
+
+    async function start() {
+        access_token = window.localStorage.access_token;
+
+        if (!access_token) {
+            // login as a guest
+            await fetch(`${csapi}/register?kind=guest`, {
+                method: 'POST',
+                body: '{}',
+            }).then(function(response) {
+                return response.json();
+            }).then(function(data) {
+                access_token = data.access_token;
+                window.localStorage.access_token = data.access_token;
+            });
+        }
+
+        // grab recent messages.
+
+        // N.B. peeking sadly still uses the old deprecated /room/initialSync and /events APIS
+        // until MSC2753 and MSC2444 land.
+        await fetch(`${csapi}/rooms/${room_id}/initialSync`, {
+            headers: { "Authorization": `Bearer ${access_token}` }
+        }).then(function(response) {
+            return response.json();
+        }).then(function(data) {
+            pagination_token = data.messages.start;
+            sync_token = data.messages.end;
+            countReactions(data.messages.chunk, true);
+        });
+
+        // grab some scrollback
+        await fetch(`${csapi}/rooms/${room_id}/messages?dir=b&limit=100&from=${pagination_token}`, {
+            headers: { "Authorization": `Bearer ${access_token}` }
+        }).then(function(response) {
+            return response.json();
+        }).then(function(data) {
+            pagination_token = data.start;
+            countReactions(data.chunk, true);
+        });
+
+        updateScores();
+
+        // start peeking
+        await peek();
+    }
+
+    const sleep = m => new Promise(r => setTimeout(r, m));
+
+    async function peek() {
+        fetch(`${csapi}/events?room_id=${room_id}&from=${sync_token}`, {
+            headers: { "Authorization": `Bearer ${access_token}` }
+        }).then(function(response) {
+            return response.json();
+        }).then(async function(data) {
+            sync_token = data.end;
+            countReactions(data.chunk, false);
+            updateScores();
+            await peek();
+        }).catch(async function(error) {
+            console.error('Error:', error);
+            await sleep(1000);
+            await peek();
+        });
+    }
+
+    function countReactions(events, bundled) {
+        for (const event of events) {
+            console.log(JSON.stringify(event));
+            history[event.event_id] = event;
+
+/*
+            // FIXME: server-side aggregated reactions don't reflect redactions currently
+            // and so can't be used.  So we don't count any reactions which predate the
+            // window we're looking at.
+            if (bundled) {
+                // aggregated reactions will be bundled with the event in unsigned.
+                // we should ignore any others in the timeline, as they've already
+                // been counted.
+                if (event.unsigned &&
+                    event.unsigned["m.relations"] &&
+                    event.unsigned["m.relations"]["m.annotation"]) {
+                    const annotations = event.unsigned["m.relations"]["m.annotation"]["chunk"];
+                    if (annotations) {
+                        for (const reaction of annotations) {
+                            reactions[event.event_id] ||= {};
+                            reactions[event.event_id][reaction.key] = reaction.count;
+                        }
+                    }
+                }
+                return;
+            }
+*/
+            // handle reactions being added...
+            if (event.type === "m.reaction" && event.content["m.relates_to"]) {
+                reactions[event.content["m.relates_to"].event_id] ||= {};
+                if (reactions[event.content["m.relates_to"].event_id][event.content["m.relates_to"].key]) {
+                    reactions[event.content["m.relates_to"].event_id][event.content["m.relates_to"].key]++;
+                }
+                else {
+                    reactions[event.content["m.relates_to"].event_id][event.content["m.relates_to"].key] = 1;
+                }
+            }
+
+            // handle reactions being removed...
+            if (event.type === "m.room.redaction") {
+                if (history[event.redacts] && history[event.redacts].type === "m.reaction") {
+                    const target = history[event.redacts];
+                    if (target.content["m.relates_to"]) {
+                        reactions[target.content["m.relates_to"].event_id] ||= {};
+                        if (reactions[target.content["m.relates_to"].event_id][target.content["m.relates_to"].key]) {
+                            reactions[target.content["m.relates_to"].event_id][target.content["m.relates_to"].key]--;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function getScore(id) {
+        // N.B. these have to be precisely the same emoji variants as the line protocol uses
+        return (reactions[id]['👍️'] || 0) - (reactions[id]['👎️'] || 0);
+    }
+
+    function formatTime(timestamp) {
+        return new Date(history[id].origin_server_ts).toLocaleString();
+    }
+
+    function updateScores() {
+        const scoreboard = document.getElementById("scoreboard");
+
+        console.log(reactions);
+
+        const scoreList = Object.keys(reactions).sort((a,b) => {
+            if (getScore(a) > getScore(b)) return -1;
+            if (getScore(a) < getScore(b)) return 1;
+            return 0;
+        });
+
+        let html = `<table>`;
+        html += `<thead>` +
+                    `<tr>` +
+                        `<th>Time</th>` +
+                        `<th>Sender</th>` +
+                        `<th>Message</th>` +
+                        `<th>Score</th>` +
+                    `</tr>` +
+                `</thead>` +
+                `<tbody>`;
+
+        for (id of scoreList) {
+            html += `<tr>` +
+                        `<td><a href="https://matrix.to/#/${room_id}/${id}">${ formatTime(history[id].origin_server_ts) }</a></td>` +
+                        `<td>${ history[id].sender }</td>` +
+                        `<td>${ history[id].content.body }</td>` +
+                        `<td>${ getScore(id) }</td>` +
+                    `</tr>`;
+        }
+        html += `</tbody>` +
+            `</table>`;
+
+        scoreboard.innerHTML = html;
+    }
+
+</script>
+</head>
+
+<body>
+    <h1>Scoreboard</h1>
+    <div id="scoreboard"></div>
+</body>
+</html>
