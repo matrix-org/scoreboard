@@ -181,8 +181,6 @@
     function updateScores() {
         const scoreboard = document.getElementById("scoreboard");
 
-        console.log(reactions);
-
         const scoreList = Object.keys(reactions).sort((a,b) => {
             if (getScore(a) > getScore(b)) return -1;
             if (getScore(a) < getScore(b)) return 1;
