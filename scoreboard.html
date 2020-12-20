@@ -50,7 +50,7 @@
     window.onload = (event) => { start(); }
 
     async function start() {
-        access_token = window.localStorage.access_token;
+        access_token = window.localStorage[`access_token_${server}`];
 
         const div = document.getElementById("roomName");
         div.innerHTML = `<a href="https://matrix.to/#/${ s(room_alias) }">${ s(room_alias) }</a>`;
@@ -64,7 +64,7 @@
                 return response.json();
             }).then(function(data) {
                 access_token = data.access_token;
-                window.localStorage.access_token = data.access_token;
+                window.localStorage[`access_token_${server}`] = data.access_token;
             });
         }
 
@@ -82,10 +82,11 @@
         // until MSC2753 and MSC2444 land.
         await fetch(`${csapi}/rooms/${room_id}/initialSync`, {
             headers: { "Authorization": `Bearer ${access_token}` }
-        }).then(function(response) {
-            if (response.status >= 400) {
+        }).then(async function(response) {
+            if (!response.ok) {
                 const scoreboard = document.getElementById("scoreboard");
-                scoreboard.innerHTML = `<b>Can't peek: ${ s(response.status) }</b>`;
+                const text = await response.text();
+                scoreboard.innerHTML = `<b>Can't peek: ${ s(text) }</b>`;
             }
             return response.json();
         }).then(function(data) {
