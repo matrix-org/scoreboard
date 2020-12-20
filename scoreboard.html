@@ -2,6 +2,28 @@
 <head>
     <title>Scoreboard</title>
     <meta charset="UTF-8">
+
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style type="text/css">
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        th {
+            text-align: left;
+        }
+
+        th, td {
+            padding-left: 4px;
+            padding-right: 4px;
+        }
+
+        .score {
+            text-align: center;
+        }
+    </style>
+
     <script type="text/javascript">
 
     // Usage: scoreboard.html?server=https://fosdem.ems.host&room_id=!ycyvSmaACYwZpdDMqK:fosdem.org
@@ -15,6 +37,7 @@
     let pagination_token = '';
     let sync_token = '';
 
+    let members = {};
     let history = {};
     let reactions = {};
 
@@ -47,7 +70,8 @@
         }).then(function(data) {
             pagination_token = data.messages.start;
             sync_token = data.messages.end;
-            countReactions(data.messages.chunk, true);
+            handleEvents(data.messages.chunk);
+            handleEvents(data.state); // to grab memberships
         });
 
         // grab some scrollback
@@ -57,7 +81,7 @@
             return response.json();
         }).then(function(data) {
             pagination_token = data.start;
-            countReactions(data.chunk, true);
+            handleEvents(data.chunk);
         });
 
         updateScores();
@@ -75,7 +99,7 @@
             return response.json();
         }).then(async function(data) {
             sync_token = data.end;
-            countReactions(data.chunk, false);
+            handleEvents(data.chunk);
             updateScores();
             await peek();
         }).catch(async function(error) {
@@ -85,33 +109,11 @@
         });
     }
 
-    function countReactions(events, bundled) {
+    function handleEvents(events) {
         for (const event of events) {
             console.log(JSON.stringify(event));
             history[event.event_id] = event;
 
-/*
-            // FIXME: server-side aggregated reactions don't reflect redactions currently
-            // and so can't be used.  So we don't count any reactions which predate the
-            // window we're looking at.
-            if (bundled) {
-                // aggregated reactions will be bundled with the event in unsigned.
-                // we should ignore any others in the timeline, as they've already
-                // been counted.
-                if (event.unsigned &&
-                    event.unsigned["m.relations"] &&
-                    event.unsigned["m.relations"]["m.annotation"]) {
-                    const annotations = event.unsigned["m.relations"]["m.annotation"]["chunk"];
-                    if (annotations) {
-                        for (const reaction of annotations) {
-                            reactions[event.event_id] ||= {};
-                            reactions[event.event_id][reaction.key] = reaction.count;
-                        }
-                    }
-                }
-                return;
-            }
-*/
             // handle reactions being added...
             if (event.type === "m.reaction" && event.content["m.relates_to"]) {
                 reactions[event.content["m.relates_to"].event_id] ||= {};
@@ -134,6 +136,11 @@
                         }
                     }
                 }
+            }
+
+            // track members
+            if (event.type === "m.room.member") {
+                members[event.state_key] = event.content;
             }
         }
     }
@@ -170,11 +177,12 @@
                 `<tbody>`;
 
         for (id of scoreList) {
+            const name = members[history[id].sender].displayname || history[id].sender;
             html += `<tr>` +
                         `<td><a href="https://matrix.to/#/${room_id}/${id}">${ formatTime(history[id].origin_server_ts) }</a></td>` +
-                        `<td>${ history[id].sender }</td>` +
+                        `<td><a href="https://matrix.to/#/${history[id].sender}">${ name }</td>` +
                         `<td>${ history[id].content.body }</td>` +
-                        `<td>${ getScore(id) }</td>` +
+                        `<td class="score">${ getScore(id) }</td>` +
                     `</tr>`;
         }
         html += `</tbody>` +
@@ -187,7 +195,7 @@
 </head>
 
 <body>
-    <h1>Scoreboard</h1>
+    <h3>Scoreboard</h3>
     <div id="scoreboard"></div>
 </body>
 </html>
