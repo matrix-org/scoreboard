@@ -19,6 +19,10 @@
             padding-right: 4px;
         }
 
+        .message img {
+            border-radius: 16px;
+        }
+
         .score {
             text-align: center;
         }
@@ -26,12 +30,14 @@
 
     <script type="text/javascript">
 
-    // Usage: scoreboard.html?server=https://fosdem.ems.host&room_id=!ycyvSmaACYwZpdDMqK:fosdem.org
+    // Usage: scoreboard.html?server=https://fosdem.ems.host&room_name=%23exampledevroom:fosdem.org
     const params = (new URL(window.location)).searchParams;
 
     const server = params.server || "https://fosdem.ems.host";
     const csapi = `${server}/_matrix/client/r0`;
-    const room_id = params.room_id || "!ycyvSmaACYwZpdDMqK:fosdem.org";
+    const mediaapi = `${server}/_matrix/media/r0`;
+    const room_alias = params.room_alias || "#exampledevroom:fosdem.org";
+    let room_id;
 
     let access_token = '';
     let pagination_token = '';
@@ -41,10 +47,13 @@
     let history = {};
     let reactions = {};
 
-    start();
+    window.onload = (event) => { start(); }
 
     async function start() {
         access_token = window.localStorage.access_token;
+
+        const div = document.getElementById("roomName");
+        div.innerHTML = s(room_alias);
 
         if (!access_token) {
             // login as a guest
@@ -58,6 +67,14 @@
                 window.localStorage.access_token = data.access_token;
             });
         }
+
+        // resolve the room_alias to a room_id
+        await fetch(`${csapi}/directory/room/${escape(room_alias)}`, {
+        }).then(function(response) {
+            return response.json();
+        }).then(function(data) {
+            room_id = data.room_id;
+        });
 
         // grab recent messages.
 
@@ -154,6 +171,13 @@
         return new Date(timestamp).toLocaleString();
     }
 
+    // sanitizeHtml
+    function s(html) {
+        const div = document.createElement('div');
+        div.textContent = html;
+        return div.innerHTML;
+    }
+
     function updateScores() {
         const scoreboard = document.getElementById("scoreboard");
 
@@ -168,9 +192,10 @@
         let html = `<table>`;
         html += `<thead>` +
                     `<tr>` +
-                        `<th>Time</th>` +
-                        `<th>Sender</th>` +
-                        `<th>Message</th>` +
+                        `<th></th>` +
+                        `<th></th>` +
+                        `<th></th>` +
+                        `<th></th>` +
                         `<th>Score</th>` +
                     `</tr>` +
                 `</thead>` +
@@ -178,10 +203,13 @@
 
         for (id of scoreList) {
             const name = members[history[id].sender].displayname || history[id].sender;
-            html += `<tr>` +
-                        `<td><a href="https://matrix.to/#/${room_id}/${id}">${ formatTime(history[id].origin_server_ts) }</a></td>` +
-                        `<td><a href="https://matrix.to/#/${history[id].sender}">${ name }</td>` +
-                        `<td>${ history[id].content.body }</td>` +
+            let avatar = members[history[id].sender].avatar_url;
+            if (avatar) avatar = avatar.replace("mxc://", `${mediaapi}/thumbnail/`) + '?width=32&height=32&method=crop';
+            html += `<tr class="message">` +
+                        `<td><a href="https://matrix.to/#/${s(room_id)}/${s(id)}">${ formatTime(history[id].origin_server_ts) }</a></td>` +
+                        `<td><img src="${ s(avatar) }" width="32" height="32"/></td>` +
+                        `<td><a href="https://matrix.to/#/${s(history[id].sender)}">${ s(name) }</td>` +
+                        `<td>${ s(history[id].content.body) }</td>` +
                         `<td class="score">${ getScore(id) }</td>` +
                     `</tr>`;
         }
@@ -195,7 +223,8 @@
 </head>
 
 <body>
-    <h3>Scoreboard</h3>
+    <h3>Scoreboard for <span id="roomName"></span></h3>
     <div id="scoreboard"></div>
+    <noscript>Please enable JavaScript for Scoreboard to work</noscript>
 </body>
 </html>
