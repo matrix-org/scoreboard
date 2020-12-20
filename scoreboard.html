@@ -210,7 +210,7 @@
             if (avatar) avatar = avatar.replace("mxc://", `${mediaapi}/thumbnail/`) + '?width=64&height=64&method=crop';
             html += `<tr class="message">` +
                         `<td><a href="https://matrix.to/#/${s(room_id)}/${s(id)}">${ formatTime(history[id].origin_server_ts) }</a></td>` +
-                        `<td><img src="${ s(avatar) }" width="32" height="32"/></td>` +
+                        `<td>` + (avatar ? `<img src="${ s(avatar) }" width="32" height="32"/>` : ``) + `</td>` +
                         `<td><a href="https://matrix.to/#/${s(history[id].sender)}">${ s(name) }</td>` +
                         `<td>${ s(history[id].content.body) }</td>` +
                         `<td class="score">${ getScore(id) }</td>` +
